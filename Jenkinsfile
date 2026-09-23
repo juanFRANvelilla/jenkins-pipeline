@@ -113,18 +113,18 @@ pipeline {
                 container('helm') {
                     script {
                         env.NAMESPACE = sh(
-                            script: "yq '.namespace' ${CHART_DIR}/values.yaml",
+                            script: "yq '.namespace' ${CHART_DIR}/values-pre.yaml",
                             returnStdout: true
                         ).trim()
 
                         if (!env.NAMESPACE || env.NAMESPACE == 'null') {
-                            error "El chart ${CHART_DIR} no define 'namespace' en values.yaml"
+                            error "El chart ${CHART_DIR} no define 'namespace' en values-pre.yaml"
                         }
 
                         sh """
                         helm upgrade --install ${RELEASE} ${CHART_DIR} \
                             --namespace ${NAMESPACE} \
-                            -f ${CHART_DIR}/values.yaml \
+                            -f ${CHART_DIR}/values-pre.yaml \
                             --set image.tag=${IMAGE_TAG} \
                             --atomic \
                             --wait \

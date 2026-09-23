@@ -13,7 +13,7 @@ Prepare  ->  Checkout  ->  Build and Push (Kaniko -> GHCR)  ->  Deploy PRE (helm
 1. **Prepare**: validates the parameters and works out the image, directory and release names.
 2. **Checkout**: fetches branch `BRANCH` from `GIT_URL`.
 3. **Build and Push**: builds the app's `Dockerfile` and pushes `ghcr.io/juanfranvelilla/<image>:<BUILD_NUMBER>`.
-4. **Deploy PRE** (when `DEPLOY_PRE` is enabled): `helm upgrade --install` of the `k8s/` chart with `image.tag=<BUILD_NUMBER>`. If the rollout doesn't become ready within 5 minutes, Helm rolls back automatically (`--atomic`).
+4. **Deploy PRE** (when `DEPLOY_PRE` is enabled): `helm upgrade --install` of the `k8s/` chart using `values-pre.yaml`, with `image.tag=<BUILD_NUMBER>`. If the rollout doesn't become ready within 5 minutes, Helm rolls back automatically (`--atomic`).
 
 ## Job parameters
 
@@ -37,7 +37,7 @@ Everything else is derived from `GIT_URL` and `APP_NAME`:
 | Image          | `ghcr.io/juanfranvelilla/<repo>-<APP_NAME>` | `ghcr.io/juanfranvelilla/<repo>` |
 | Tag            | `<BUILD_NUMBER>`                            | `<BUILD_NUMBER>`                 |
 | Helm release   | `<repo>-<APP_NAME>`                         | `<repo>`                         |
-| Namespace      | `namespace` field in `k8s/values.yaml`      | same                             |
+| Namespace      | `namespace` field in `k8s/values-pre.yaml`  | same                             |
 
 Example, finance-portfolio backend: image `ghcr.io/juanfranvelilla/finance-portfolio-backend:12`, release `finance-portfolio-backend`, namespace `pre-finance-portfolio-back`.
 
@@ -59,12 +59,12 @@ pro-<project>-back    pro-<project>-front
   Dockerfile
   k8s/
     Chart.yaml
-    values.yaml        # PRE
+    values-pre.yaml    # PRE
     values-pro.yaml    # PRO (later, Argo CD)
     templates/
 ```
 
-`values.yaml` must contain at least:
+`values-pre.yaml` must contain at least:
 
 ```yaml
 namespace: pre-<project>-<back|front>
