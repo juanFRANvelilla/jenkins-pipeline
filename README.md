@@ -1,13 +1,13 @@
 # jenkins-pipeline
 
-Shared Jenkinsfile for all my projects. It builds the image with **Kaniko** (no Docker or Podman), pushes it to **GHCR**, copies the Helm chart to **helm-charts** (`develop`) and optionally deploys **PRE**.
+Shared Jenkinsfile for all my projects. It builds the image with **BuildKit** (no Docker, Podman or Kaniko), pushes it to **GHCR**, copies the Helm chart to **helm-charts** (`develop`) and optionally deploys **PRE**.
 
 Production (PRO) will be promoted later with a PR `develop` → `release` and Argo CD.
 
 ## Flow
 
 ```text
-Prepare  ->  Checkout  ->  Build and Push (Kaniko -> GHCR)
+Prepare  ->  Checkout  ->  Build and Push (BuildKit -> GHCR)
          ->  Publish Helm Chart (helm-charts / develop)
          ->  Deploy PRE (optional helm upgrade)
 ```
@@ -83,12 +83,12 @@ Templates must use `{{ .Values.namespace }}` in `metadata.namespace` and the lab
 
 Once, in the `jenkins` namespace:
 
-- **Secret `regcred`** (`kubernetes.io/dockerconfigjson`) with write access to `ghcr.io`. Kaniko uses it to push the image.
+- **Secret `regcred`** (`kubernetes.io/dockerconfigjson`) with write access to `ghcr.io`. BuildKit uses it to push the image.
 - **ServiceAccount `jenkins-deployer`**: the identity the build pod uses to deploy with Helm.
   ```bash
   kubectl create serviceaccount jenkins-deployer -n jenkins
   ```
-- **Kaniko cache** on the node: `/home/juanfran/jenkins-cache/kaniko` (hostPath).
+- **BuildKit state** on the node: `/home/juanfran/jenkins-cache/buildkit` (hostPath). Registry cache also goes to `ghcr.io/.../<image>/cache`.
 
 For each PRE namespace (`pre-<project>-<app>`):
 

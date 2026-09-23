@@ -1,24 +1,38 @@
 pipeline {
     agent {
         kubernetes {
-            label 'ci-kaniko-helm'
+            label 'ci-buildkit-helm'
             idleMinutes 20
             yaml """
             apiVersion: v1
             kind: Pod
+            metadata:
+              annotations:
+                container.apparmor.security.beta.kubernetes.io/buildkit: unconfined
             spec:
               serviceAccountName: jenkins-deployer
+              securityContext:
+                fsGroup: 1000
               containers:
-              - name: kaniko
-                image: gcr.io/kaniko-project/executor:debug
+              - name: buildkit
+                image: moby/buildkit:v0.27.0-rootless
                 imagePullPolicy: IfNotPresent
                 command: ['sleep', 'infinity']
+                env:
+                - name: BUILDKITD_FLAGS
+                  value: --oci-worker-no-process-sandbox --oci-worker-snapshotter=native
+                - name: DOCKER_CONFIG
+                  value: /home/user/.docker
+                securityContext:
+                  runAsUser: 1000
+                  runAsGroup: 1000
+                  seccompProfile:
+                    type: Unconfined
                 volumeMounts:
-                - name: kaniko-secret
-                  mountPath: /kaniko/.docker
-                - name: cache-volume
-                  mountPath: /kaniko/cache
-                  subPath: kaniko
+                - name: docker-config
+                  mountPath: /home/user/.docker
+                - name: buildkit-state
+                  mountPath: /home/user/.local/share/buildkit
               - name: helm
                 image: mirror.gcr.io/alpine/k8s:1.32.3
                 imagePullPolicy: IfNotPresent
@@ -28,13 +42,13 @@ pipeline {
                 imagePullPolicy: IfNotPresent
                 command: ['sleep', 'infinity']
               volumes:
-              - name: kaniko-secret
+              - name: docker-config
                 secret:
                   secretName: regcred
                   items: [{key: .dockerconfigjson, path: config.json}]
-              - name: cache-volume
+              - name: buildkit-state
                 hostPath:
-                  path: /home/juanfran/jenkins-cache
+                  path: /home/juanfran/jenkins-cache/buildkit
                   type: DirectoryOrCreate
             """
         }
@@ -61,12 +75,13 @@ pipeline {
                     def repoName  = params.GIT_URL.tokenize('/')[-1].replaceAll(/\.git$/, '').toLowerCase()
 
                     env.BRANCH    = params.BRANCH?.trim() ?: 'main'
-                    env.REPO_NAME = repoName
                     env.APP_DIR   = buildRoot ? '.' : params.APP_NAME
                     env.CHART_DIR = "${env.APP_DIR}/k8s"
                     env.IMAGE     = buildRoot ? "${REGISTRY}/${repoName}" : "${REGISTRY}/${repoName}-${params.APP_NAME}"
+                    env.CACHE_IMAGE = "${env.IMAGE}/cache"
                     env.RELEASE   = buildRoot ? repoName : "${repoName}-${params.APP_NAME}"
                     env.CHART_PUBLISH_DIR = "charts/app/${repoName}/${params.APP_NAME}"
+                    env.REPO_NAME = repoName
 
                     currentBuild.displayName = "#${env.BUILD_NUMBER} ${env.BRANCH}"
 
@@ -75,6 +90,7 @@ pipeline {
                     Rama:    ${env.BRANCH}
                     Carpeta: ${env.APP_DIR}
                     Imagen:  ${env.IMAGE}:${IMAGE_TAG}
+                    Caché:   ${env.CACHE_IMAGE}
                     Release: ${env.RELEASE}
                     Charts:  ${env.CHART_PUBLISH_DIR}
                     """.stripIndent()
@@ -93,36 +109,22 @@ pipeline {
 
         stage('Build and Push') {
             steps {
-                container('kaniko') {
+                container('buildkit') {
                     script {
-                        def statusCode = sh(
-                            script: """
-                            set +e
-                            ( while sleep 15; do echo "[kaniko-heartbeat] \$(date -u +%H:%M:%S)"; done ) &
-                            HB=\$!
-                            /kaniko/executor \\
-                            --context=${WORKSPACE}/${APP_DIR} \\
-                            --dockerfile=${WORKSPACE}/${APP_DIR}/Dockerfile \\
-                            --destination=${IMAGE}:${IMAGE_TAG} \\
-                            --cache=true \\
-                            --cache-dir=/kaniko/cache \\
-                            --use-new-run \\
-                            --compressed-caching=false
-                            RC=\$?
-                            kill \$HB >/dev/null 2>&1
-                            wait \$HB >/dev/null 2>&1
-                            echo "kaniko_exit=\${RC}"
-                            exit \${RC}
-                            """,
-                            returnStatus: true
-                        )
-
-                        // -1: el wrapper de Jenkins pierde el proceso al terminar Kaniko, aunque el push haya ido bien
-                        if (statusCode == 0 || statusCode == -1) {
-                            echo "Imagen subida: ${IMAGE}:${IMAGE_TAG} (status ${statusCode})"
-                        } else {
-                            error "Fallo en Kaniko. Status: ${statusCode}"
-                        }
+                        def contextDir = "${env.WORKSPACE}/${env.APP_DIR}"
+                        sh """
+                        set -eu
+                        export DOCKER_CONFIG=/home/user/.docker
+                        buildctl-daemonless.sh build \\
+                          --frontend dockerfile.v0 \\
+                          --local context=${contextDir} \\
+                          --local dockerfile=${contextDir} \\
+                          --opt filename=Dockerfile \\
+                          --import-cache type=registry,ref=${CACHE_IMAGE} \\
+                          --export-cache type=registry,ref=${CACHE_IMAGE},mode=max \\
+                          --output type=image,name=${IMAGE}:${IMAGE_TAG},push=true
+                        """
+                        echo "Imagen subida: ${env.IMAGE}:${IMAGE_TAG}"
                     }
                 }
             }
