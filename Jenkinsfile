@@ -19,6 +19,9 @@ pipeline {
               - name: helm
                 image: mirror.gcr.io/alpine/k8s:1.32.3
                 command: ['sleep', 'infinity']
+              - name: git
+                image: mirror.gcr.io/alpine/git
+                command: ['sleep', 'infinity']
               volumes:
               - name: kaniko-secret
                 secret:
@@ -33,10 +36,12 @@ pipeline {
     }
 
     environment {
-        GITHUB_USER    = 'juanfranvelilla'
-        GIT_CREDENTIAL = 'github-personal-token'
-        REGISTRY       = "ghcr.io/${GITHUB_USER}"
-        IMAGE_TAG      = "${env.BUILD_NUMBER}"
+        GITHUB_USER      = 'juanfranvelilla'
+        GIT_CREDENTIAL   = 'github-personal-token'
+        REGISTRY         = "ghcr.io/${GITHUB_USER}"
+        IMAGE_TAG        = "${env.BUILD_NUMBER}"
+        HELM_CHARTS_REPO = 'https://github.com/juanFRANvelilla/helm-charts.git'
+        HELM_CHARTS_BRANCH = 'develop'
     }
 
     stages {
@@ -51,10 +56,12 @@ pipeline {
                     def repoName  = params.GIT_URL.tokenize('/')[-1].replaceAll(/\.git$/, '').toLowerCase()
 
                     env.BRANCH    = params.BRANCH?.trim() ?: 'main'
+                    env.REPO_NAME = repoName
                     env.APP_DIR   = buildRoot ? '.' : params.APP_NAME
                     env.CHART_DIR = "${env.APP_DIR}/k8s"
                     env.IMAGE     = buildRoot ? "${REGISTRY}/${repoName}" : "${REGISTRY}/${repoName}-${params.APP_NAME}"
                     env.RELEASE   = buildRoot ? repoName : "${repoName}-${params.APP_NAME}"
+                    env.CHART_PUBLISH_DIR = "charts/app/${repoName}/${params.APP_NAME}"
 
                     currentBuild.displayName = "#${env.BUILD_NUMBER} ${env.BRANCH}"
 
@@ -64,6 +71,7 @@ pipeline {
                     Carpeta: ${env.APP_DIR}
                     Imagen:  ${env.IMAGE}:${IMAGE_TAG}
                     Release: ${env.RELEASE}
+                    Charts:  ${env.CHART_PUBLISH_DIR}
                     """.stripIndent()
                 }
             }
@@ -99,6 +107,53 @@ pipeline {
                             echo "Imagen subida: ${IMAGE}:${IMAGE_TAG} (status ${statusCode})"
                         } else {
                             error "Fallo en Kaniko. Status: ${statusCode}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Publish Helm Chart') {
+            steps {
+                lock(resource: 'helm-charts') {
+                    container('git') {
+                        withCredentials([usernamePassword(
+                            credentialsId: env.GIT_CREDENTIAL,
+                            usernameVariable: 'GIT_USER',
+                            passwordVariable: 'GIT_TOKEN'
+                        )]) {
+                            sh """
+                            set -eu
+                            git config --global user.email "jenkins@ci.local"
+                            git config --global user.name "Jenkins"
+                            rm -rf helm-charts-repo
+                            git clone --branch ${HELM_CHARTS_BRANCH} --single-branch \
+                              https://\${GIT_USER}:\${GIT_TOKEN}@github.com/juanFRANvelilla/helm-charts.git \
+                              helm-charts-repo
+
+                            DEST=helm-charts-repo/${CHART_PUBLISH_DIR}
+                            mkdir -p "\$DEST"
+                            rm -rf "\$DEST"/*
+                            cp -a ${CHART_DIR}/. "\$DEST"/
+
+                            if [ -f "\$DEST/Chart.yaml" ]; then
+                              sed -i "s/^appVersion:.*/appVersion: \\"${IMAGE_TAG}\\"/" "\$DEST/Chart.yaml"
+                            fi
+                            for values in "\$DEST"/values-pre.yaml "\$DEST"/values-pro.yaml; do
+                              if [ -f "\$values" ]; then
+                                sed -i "s/^  tag:.*/  tag: \\"${IMAGE_TAG}\\"/" "\$values"
+                              fi
+                            done
+
+                            cd helm-charts-repo
+                            git add "${CHART_PUBLISH_DIR}"
+                            if git diff --cached --quiet; then
+                              echo "Helm chart ${CHART_PUBLISH_DIR} already at ${IMAGE_TAG}"
+                            else
+                              git commit -m "Add Helm chart for ${REPO_NAME}-${params.APP_NAME} version ${IMAGE_TAG}"
+                              git push origin ${HELM_CHARTS_BRANCH}
+                            fi
+                            """
                         }
                     }
                 }

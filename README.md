@@ -1,19 +1,22 @@
 # jenkins-pipeline
 
-Shared Jenkinsfile for all my projects. It builds the image with **Kaniko** (no Docker or Podman), pushes it to **GHCR** and deploys it to **PRE** with **Helm**.
+Shared Jenkinsfile for all my projects. It builds the image with **Kaniko** (no Docker or Podman), pushes it to **GHCR**, copies the Helm chart to **helm-charts** (`develop`) and optionally deploys **PRE**.
 
-Production (PRO) is out of scope for this pipeline: it will be deployed later with Argo CD.
+Production (PRO) will be promoted later with a PR `develop` → `release` and Argo CD.
 
 ## Flow
 
 ```text
-Prepare  ->  Checkout  ->  Build and Push (Kaniko -> GHCR)  ->  Deploy PRE (helm upgrade)
+Prepare  ->  Checkout  ->  Build and Push (Kaniko -> GHCR)
+         ->  Publish Helm Chart (helm-charts / develop)
+         ->  Deploy PRE (optional helm upgrade)
 ```
 
 1. **Prepare**: validates the parameters and works out the image, directory and release names.
 2. **Checkout**: fetches branch `BRANCH` from `GIT_URL`.
 3. **Build and Push**: builds the app's `Dockerfile` and pushes `ghcr.io/juanfranvelilla/<image>:<BUILD_NUMBER>`.
-4. **Deploy PRE** (when `DEPLOY_PRE` is enabled): `helm upgrade --install` of the `k8s/` chart using `values-pre.yaml`, with `image.tag=<BUILD_NUMBER>`. If the rollout doesn't become ready within 5 minutes, Helm rolls back automatically (`--atomic`).
+4. **Publish Helm Chart**: copies `k8s/` to `charts/app/<repo>/<APP_NAME>/` in [helm-charts](https://github.com/juanFRANvelilla/helm-charts) (`develop`), sets `appVersion` and `image.tag` to `BUILD_NUMBER`, and pushes.
+5. **Deploy PRE** (when `DEPLOY_PRE` is enabled): `helm upgrade --install` of the `k8s/` chart using `values-pre.yaml`, with `image.tag=<BUILD_NUMBER>`. If the rollout doesn't become ready within 5 minutes, Helm rolls back automatically (`--atomic`).
 
 ## Job parameters
 
@@ -25,7 +28,7 @@ They are defined in each Jenkins job's configuration (*This project is parameter
 | `BRANCH`     | String  | `main`                                                     | Branch to build and deploy. Defaults to `main`. |
 | `APP_NAME`   | String  | `backend`                                                  | Subdirectory containing the `Dockerfile` and the `k8s/` chart. Required. |
 | `BUILD_ROOT` | Boolean | `false`                                                    | `true` if the `Dockerfile` and `k8s/` live at the repository root. |
-| `DEPLOY_PRE` | Boolean | `true`                                                     | `false` to only build and push the image. |
+| `DEPLOY_PRE` | Boolean | `true`                                                     | `false` to skip the PRE deploy. Image push and helm-charts publish still run. |
 
 ## Conventions
 
@@ -38,6 +41,7 @@ Everything else is derived from `GIT_URL` and `APP_NAME`:
 | Tag            | `<BUILD_NUMBER>`                            | `<BUILD_NUMBER>`                 |
 | Helm release   | `<repo>-<APP_NAME>`                         | `<repo>`                         |
 | Namespace      | `namespace` field in `k8s/values-pre.yaml`  | same                             |
+| helm-charts    | `charts/app/<repo>/<APP_NAME>/`             | same                             |
 
 Example, finance-portfolio backend: image `ghcr.io/juanfranvelilla/finance-portfolio-backend:12`, release `finance-portfolio-backend`, namespace `pre-finance-portfolio-back`.
 
