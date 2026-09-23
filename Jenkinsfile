@@ -34,7 +34,7 @@ pipeline {
 
     environment {
         GITHUB_USER    = 'juanfranvelilla'
-        GIT_CREDENTIAL = 'github-token-podio'
+        GIT_CREDENTIAL = 'github-personal-token'
         REGISTRY       = "ghcr.io/${GITHUB_USER}"
         IMAGE_TAG      = "${env.BUILD_NUMBER}"
     }
