@@ -1,58 +1,58 @@
 # jenkins-pipeline
 
-Jenkinsfile común para todos mis proyectos. Construye la imagen con **Kaniko** (sin Docker ni Podman), la sube a **GHCR** y la despliega en **PRE** con **Helm**.
+Shared Jenkinsfile for all my projects. It builds the image with **Kaniko** (no Docker or Podman), pushes it to **GHCR** and deploys it to **PRE** with **Helm**.
 
-Producción (PRO) queda fuera de este pipeline: se desplegará más adelante con Argo CD.
+Production (PRO) is out of scope for this pipeline: it will be deployed later with Argo CD.
 
-## Flujo
+## Flow
 
 ```text
 Prepare  ->  Checkout  ->  Build and Push (Kaniko -> GHCR)  ->  Deploy PRE (helm upgrade)
 ```
 
-1. **Prepare**: valida los parámetros y calcula imagen, carpeta y release.
-2. **Checkout**: descarga la rama `BRANCH` de `GIT_URL`.
-3. **Build and Push**: construye el `Dockerfile` de la carpeta de la app y sube `ghcr.io/juanfranvelilla/<imagen>:<BUILD_NUMBER>`.
-4. **Deploy PRE** (si `DEPLOY_PRE` está activo): `helm upgrade --install` del chart `k8s/` con `image.tag=<BUILD_NUMBER>`. Si el despliegue no arranca en 5 minutos, Helm hace rollback automático (`--atomic`).
+1. **Prepare**: validates the parameters and works out the image, directory and release names.
+2. **Checkout**: fetches branch `BRANCH` from `GIT_URL`.
+3. **Build and Push**: builds the app's `Dockerfile` and pushes `ghcr.io/juanfranvelilla/<image>:<BUILD_NUMBER>`.
+4. **Deploy PRE** (when `DEPLOY_PRE` is enabled): `helm upgrade --install` of the `k8s/` chart with `image.tag=<BUILD_NUMBER>`. If the rollout doesn't become ready within 5 minutes, Helm rolls back automatically (`--atomic`).
 
-## Parámetros del job
+## Job parameters
 
-Se definen en la configuración de cada job de Jenkins (*This project is parameterized*), **no** en el Jenkinsfile, para que cada job conserve sus valores por defecto.
+They are defined in each Jenkins job's configuration (*This project is parameterized*), **not** in the Jenkinsfile, so every job keeps its own defaults.
 
-| Parámetro    | Tipo    | Ejemplo                                                  | Descripción |
-|--------------|---------|----------------------------------------------------------|-------------|
-| `GIT_URL`    | String  | `https://github.com/juanFRANvelilla/finance-portfolio.git` | Repo del proyecto. Obligatorio. |
-| `BRANCH`     | String  | `main`                                                   | Rama a construir y desplegar. Por defecto `main`. |
-| `APP_NAME`   | String  | `backend`                                                | Subcarpeta con el `Dockerfile` y el chart `k8s/`. Obligatorio. |
-| `BUILD_ROOT` | Boolean | `false`                                                  | `true` si el `Dockerfile` y `k8s/` están en la raíz del repo. |
-| `DEPLOY_PRE` | Boolean | `true`                                                   | `false` para solo construir y subir la imagen. |
+| Parameter    | Type    | Example                                                    | Description |
+|--------------|---------|------------------------------------------------------------|-------------|
+| `GIT_URL`    | String  | `https://github.com/juanFRANvelilla/finance-portfolio.git` | Project repository. Required. |
+| `BRANCH`     | String  | `main`                                                     | Branch to build and deploy. Defaults to `main`. |
+| `APP_NAME`   | String  | `backend`                                                  | Subdirectory containing the `Dockerfile` and the `k8s/` chart. Required. |
+| `BUILD_ROOT` | Boolean | `false`                                                    | `true` if the `Dockerfile` and `k8s/` live at the repository root. |
+| `DEPLOY_PRE` | Boolean | `true`                                                     | `false` to only build and push the image. |
 
-## Convenciones
+## Conventions
 
-Con `GIT_URL` y `APP_NAME` se calcula todo lo demás:
+Everything else is derived from `GIT_URL` and `APP_NAME`:
 
-| Qué              | `BUILD_ROOT=false`                           | `BUILD_ROOT=true`           |
-|------------------|----------------------------------------------|-----------------------------|
-| Carpeta          | `<APP_NAME>/`                                | `./`                        |
-| Imagen           | `ghcr.io/juanfranvelilla/<repo>-<APP_NAME>`  | `ghcr.io/juanfranvelilla/<repo>` |
-| Tag              | `<BUILD_NUMBER>`                             | `<BUILD_NUMBER>`            |
-| Release de Helm  | `<repo>-<APP_NAME>`                          | `<repo>`                    |
-| Namespace        | campo `namespace` de `k8s/values.yaml`       | igual                       |
+| What           | `BUILD_ROOT=false`                          | `BUILD_ROOT=true`                |
+|----------------|---------------------------------------------|----------------------------------|
+| Directory      | `<APP_NAME>/`                               | `./`                             |
+| Image          | `ghcr.io/juanfranvelilla/<repo>-<APP_NAME>` | `ghcr.io/juanfranvelilla/<repo>` |
+| Tag            | `<BUILD_NUMBER>`                            | `<BUILD_NUMBER>`                 |
+| Helm release   | `<repo>-<APP_NAME>`                         | `<repo>`                         |
+| Namespace      | `namespace` field in `k8s/values.yaml`      | same                             |
 
-Ejemplo, finance-portfolio backend: imagen `ghcr.io/juanfranvelilla/finance-portfolio-backend:12`, release `finance-portfolio-backend`, namespace `pre-finance-portfolio-back`.
+Example, finance-portfolio backend: image `ghcr.io/juanfranvelilla/finance-portfolio-backend:12`, release `finance-portfolio-backend`, namespace `pre-finance-portfolio-back`.
 
-Solo se publica el tag numérico: no hay `latest` ni `dev`, así cada despliegue apunta a una imagen concreta.
+Only the numeric tag is published: no `latest` or `dev`, so every deployment points to a specific image.
 
 ### Namespaces
 
-Uno por entorno y app, con el entorno delante:
+One per environment and app, environment first:
 
 ```text
-pre-<proyecto>-back    pre-<proyecto>-front
-pro-<proyecto>-back    pro-<proyecto>-front
+pre-<project>-back    pre-<project>-front
+pro-<project>-back    pro-<project>-front
 ```
 
-### Estructura esperada en cada proyecto
+### Expected layout in each project
 
 ```text
 <APP_NAME>/
@@ -60,60 +60,60 @@ pro-<proyecto>-back    pro-<proyecto>-front
   k8s/
     Chart.yaml
     values.yaml        # PRE
-    values-pro.yaml    # PRO (más adelante, Argo CD)
+    values-pro.yaml    # PRO (later, Argo CD)
     templates/
 ```
 
-`values.yaml` debe tener al menos:
+`values.yaml` must contain at least:
 
 ```yaml
-namespace: pre-<proyecto>-<back|front>
-registry: ghcr.io/juanfranvelilla/<imagen>
+namespace: pre-<project>-<back|front>
+registry: ghcr.io/juanfranvelilla/<image>
 image:
-  tag: ""   # lo sobrescribe Jenkins con el BUILD_NUMBER
+  tag: ""   # overridden by Jenkins with the BUILD_NUMBER
 ```
 
-Y las plantillas deben usar `{{ .Values.namespace }}` en `metadata.namespace` y la etiqueta `app.kubernetes.io/instance: {{ .Release.Name }}`.
+Templates must use `{{ .Values.namespace }}` in `metadata.namespace` and the label `app.kubernetes.io/instance: {{ .Release.Name }}`.
 
-## Requisitos en el clúster
+## Cluster requirements
 
-Una sola vez, en el namespace `jenkins`:
+Once, in the `jenkins` namespace:
 
-- **Secret `regcred`** (`kubernetes.io/dockerconfigjson`) con acceso de escritura a `ghcr.io`. Kaniko lo usa para subir la imagen.
-- **ServiceAccount `jenkins-deployer`**: es la identidad del pod de build para desplegar con Helm.
+- **Secret `regcred`** (`kubernetes.io/dockerconfigjson`) with write access to `ghcr.io`. Kaniko uses it to push the image.
+- **ServiceAccount `jenkins-deployer`**: the identity the build pod uses to deploy with Helm.
   ```bash
   kubectl create serviceaccount jenkins-deployer -n jenkins
   ```
-- **Caché de Kaniko** en el nodo: `/home/juanfran/jenkins-cache/kaniko` (hostPath).
+- **Kaniko cache** on the node: `/home/juanfran/jenkins-cache/kaniko` (hostPath).
 
-Por cada namespace de PRE (`pre-<proyecto>-<app>`):
+For each PRE namespace (`pre-<project>-<app>`):
 
 ```bash
 NS=pre-finance-portfolio-back
 
 kubectl create namespace $NS
 
-# Permiso para que Jenkins despliegue en este namespace (y solo en este)
+# Allow Jenkins to deploy to this namespace (and only this one)
 kubectl create rolebinding jenkins-deployer -n $NS \
   --clusterrole=edit \
   --serviceaccount=jenkins:jenkins-deployer
 
-# Credenciales para que el clúster descargue la imagen de GHCR
+# Credentials for the cluster to pull the image from GHCR
 kubectl create secret docker-registry ghcr-secret -n $NS \
   --docker-server=ghcr.io \
   --docker-username=juanfranvelilla \
-  --docker-password=<PAT con read:packages>
+  --docker-password=<PAT with read:packages>
 ```
 
-Más los secrets propios de la app (por ejemplo `backend-secrets`).
+Plus the app's own secrets (for example `backend-secrets`).
 
-## Crear un job nuevo
+## Creating a new job
 
 1. **New Item** → *Pipeline*.
-2. Marcar *This project is parameterized* y añadir los parámetros de la tabla con los valores del proyecto.
+2. Tick *This project is parameterized* and add the parameters from the table with the project's values.
 3. **Pipeline** → *Pipeline script from SCM*:
-   - Repository URL: la de este repo.
-   - Credentials: `github-token-podio`.
+   - Repository URL: this repository's URL.
+   - Credentials: `github-personal-token`.
    - Branch: `*/main`.
    - Script Path: `Jenkinsfile`.
-4. Guardar y lanzar con **Build with Parameters**.
+4. Save and run it with **Build with Parameters**.
