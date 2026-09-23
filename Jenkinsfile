@@ -1,7 +1,7 @@
 pipeline {
     agent {
         kubernetes {
-            label 'ci-buildkit-helm'
+            label 'ci-buildkit-helm-v2'
             idleMinutes 20
             yaml """
             apiVersion: v1
