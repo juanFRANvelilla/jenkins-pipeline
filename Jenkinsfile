@@ -1,6 +1,8 @@
 pipeline {
     agent {
         kubernetes {
+            label 'ci-kaniko-helm'
+            idleMinutes 20
             yaml """
             apiVersion: v1
             kind: Pod
@@ -9,6 +11,7 @@ pipeline {
               containers:
               - name: kaniko
                 image: gcr.io/kaniko-project/executor:debug
+                imagePullPolicy: IfNotPresent
                 command: ['sleep', 'infinity']
                 volumeMounts:
                 - name: kaniko-secret
@@ -18,9 +21,11 @@ pipeline {
                   subPath: kaniko
               - name: helm
                 image: mirror.gcr.io/alpine/k8s:1.32.3
+                imagePullPolicy: IfNotPresent
                 command: ['sleep', 'infinity']
               - name: git
                 image: mirror.gcr.io/alpine/git
+                imagePullPolicy: IfNotPresent
                 command: ['sleep', 'infinity']
               volumes:
               - name: kaniko-secret
@@ -92,12 +97,22 @@ pipeline {
                     script {
                         def statusCode = sh(
                             script: """
-                            /kaniko/executor \
-                            --context=${WORKSPACE}/${APP_DIR} \
-                            --dockerfile=${WORKSPACE}/${APP_DIR}/Dockerfile \
-                            --destination=${IMAGE}:${IMAGE_TAG} \
-                            --cache=true \
-                            --cache-dir=/kaniko/cache
+                            set +e
+                            ( while sleep 15; do echo "[kaniko-heartbeat] \$(date -u +%H:%M:%S)"; done ) &
+                            HB=\$!
+                            /kaniko/executor \\
+                            --context=${WORKSPACE}/${APP_DIR} \\
+                            --dockerfile=${WORKSPACE}/${APP_DIR}/Dockerfile \\
+                            --destination=${IMAGE}:${IMAGE_TAG} \\
+                            --cache=true \\
+                            --cache-dir=/kaniko/cache \\
+                            --use-new-run \\
+                            --compressed-caching=false
+                            RC=\$?
+                            kill \$HB >/dev/null 2>&1
+                            wait \$HB >/dev/null 2>&1
+                            echo "kaniko_exit=\${RC}"
+                            exit \${RC}
                             """,
                             returnStatus: true
                         )
@@ -127,7 +142,7 @@ pipeline {
                             git config --global user.email "jenkins@ci.local"
                             git config --global user.name "Jenkins"
                             rm -rf helm-charts-repo
-                            git clone --branch ${HELM_CHARTS_BRANCH} --single-branch \
+                            git clone --depth 1 --branch ${HELM_CHARTS_BRANCH} --single-branch \
                               https://\${GIT_USER}:\${GIT_TOKEN}@github.com/juanFRANvelilla/helm-charts.git \
                               helm-charts-repo
 
