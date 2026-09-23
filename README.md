@@ -88,7 +88,7 @@ Once, in the `jenkins` namespace:
   ```bash
   kubectl create serviceaccount jenkins-deployer -n jenkins
   ```
-- **BuildKit state** on the node: `/home/juanfran/jenkins-cache/buildkit` (hostPath). Registry cache also goes to `ghcr.io/.../<image>/cache`.
+- **BuildKit cache** in GHCR: `ghcr.io/.../<image>/cache`. The daemon state is an `emptyDir` in the build pod (uid 1000 cannot write a root-owned hostPath).
 
 For each PRE namespace (`pre-<project>-<app>`):
 

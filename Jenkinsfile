@@ -47,9 +47,7 @@ pipeline {
                   secretName: regcred
                   items: [{key: .dockerconfigjson, path: config.json}]
               - name: buildkit-state
-                hostPath:
-                  path: /home/juanfran/jenkins-cache/buildkit
-                  type: DirectoryOrCreate
+                emptyDir: {}
             """
         }
     }
