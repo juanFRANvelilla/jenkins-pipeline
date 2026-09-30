@@ -41,6 +41,10 @@ pipeline {
                 image: mirror.gcr.io/alpine/git
                 imagePullPolicy: IfNotPresent
                 command: ['sleep', 'infinity']
+              - name: python
+                image: python:3.12-slim
+                imagePullPolicy: IfNotPresent
+                command: ['sleep', 'infinity']
               volumes:
               - name: docker-config
                 secret:
@@ -50,6 +54,14 @@ pipeline {
                 emptyDir: {}
             """
         }
+    }
+
+    parameters {
+        booleanParam(
+            name: 'RUN_TESTS',
+            defaultValue: true,
+            description: 'Ejecutar tests unitarios antes del build (recomendado)'
+        )
     }
 
     environment {
@@ -102,6 +114,40 @@ pipeline {
                           branches: [[name: "*/${env.BRANCH}"]],
                           userRemoteConfigs: [[url: params.GIT_URL, credentialsId: env.GIT_CREDENTIAL]]
                 ])
+            }
+        }
+
+        stage('Test') {
+            when {
+                expression { params.RUN_TESTS?.toString() != 'false' }
+            }
+            steps {
+                container('python') {
+                    script {
+                        def appDir = "${env.WORKSPACE}/${env.APP_DIR}"
+                        def testsDir = "${appDir}/tests"
+
+                        if (!fileExists(testsDir)) {
+                            echo "No se encontró directorio tests/ en ${appDir}. Saltando tests."
+                            return
+                        }
+
+                        def reqFile = "${appDir}/requirements.txt"
+                        if (fileExists(reqFile)) {
+                            sh """
+                            set -eu
+                            pip install --quiet --no-cache-dir -r ${reqFile}
+                            """
+                        }
+
+                        sh """
+                        set -eu
+                        cd ${appDir}
+                        export DATABASE_URL="postgresql://test:test@localhost:5432/test"
+                        python -m unittest discover -s tests -t . -v
+                        """
+                    }
+                }
             }
         }
 
