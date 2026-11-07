@@ -92,6 +92,7 @@ pipeline {
                     env.RELEASE   = buildRoot ? repoName : "${repoName}-${params.APP_NAME}"
                     env.CHART_PUBLISH_DIR = "charts/app/${repoName}/${params.APP_NAME}"
                     env.REPO_NAME = repoName
+                    env.SKIP_ARGO_PUBLISH = params.SKIP_ARGO_PUBLISH?.toString() == 'true' ? 'true' : 'false'
 
                     currentBuild.displayName = "#${env.BUILD_NUMBER} ${env.BRANCH}"
 
@@ -103,6 +104,7 @@ pipeline {
                     Caché:   ${env.CACHE_IMAGE}
                     Release: ${env.RELEASE}
                     Charts:  ${env.CHART_PUBLISH_DIR}
+                    Argo:    ${env.SKIP_ARGO_PUBLISH == 'true' ? 'no publicar chart' : 'publicar chart'}
                     """.stripIndent()
                 }
             }
@@ -175,6 +177,9 @@ pipeline {
         }
 
         stage('Publish Helm Chart') {
+            when {
+                expression { env.SKIP_ARGO_PUBLISH != 'true' }
+            }
             steps {
                 lock(resource: 'helm-charts') {
                     container('git') {

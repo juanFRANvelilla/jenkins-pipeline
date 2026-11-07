@@ -29,6 +29,7 @@ They are defined in each Jenkins job's configuration (*This project is parameter
 | `APP_NAME`   | String  | `backend`                                                  | Subdirectory containing the `Dockerfile` and the `k8s/` chart. Required. |
 | `BUILD_ROOT` | Boolean | `false`                                                    | `true` if the `Dockerfile` and `k8s/` live at the repository root. |
 | `DEPLOY_PRE` | Boolean | `true`                                                     | `false` to skip the PRE deploy. Image push and helm-charts publish still run. |
+| `SKIP_ARGO_PUBLISH` | Boolean | `false`                                            | `true` to skip copying the chart to helm-charts. Absent or `false` keeps the current behavior, so existing jobs do not need this parameter. The image is still pushed to GHCR: Deploy PRE pulls that tag. |
 
 ## Conventions
 
