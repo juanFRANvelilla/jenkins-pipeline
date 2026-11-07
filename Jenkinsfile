@@ -173,6 +173,85 @@ pipeline {
                         echo "Imagen subida: ${env.IMAGE}:${IMAGE_TAG}"
                     }
                 }
+                container('python') {
+                    withCredentials([usernamePassword(
+                        credentialsId: env.GIT_CREDENTIAL,
+                        usernameVariable: 'GIT_USER',
+                        passwordVariable: 'GIT_TOKEN'
+                    )]) {
+                        sh '''
+                        python - <<'PY'
+import json, os, urllib.error, urllib.parse, urllib.request
+
+token = os.environ["GIT_TOKEN"]
+image = os.environ["IMAGE"]
+tag = int(os.environ["IMAGE_TAG"])
+cutoff = tag - 2
+if cutoff < 1:
+    print(f"Tag {tag}: se conservan las dos últimas. No hay versiones anteriores que borrar.")
+    raise SystemExit(0)
+
+parts = image.split("/", 2)
+if len(parts) != 3 or parts[0] != "ghcr.io":
+    raise SystemExit(f"Imagen no es de GHCR: {image}")
+package = urllib.parse.quote(parts[2], safe="")
+
+def call(method, url):
+    req = urllib.request.Request(
+        url,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "jenkins-pipeline",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return resp.status, resp.read().decode()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode()
+
+versions = []
+page = 1
+while True:
+    status, body = call(
+        "GET",
+        f"https://api.github.com/user/packages/container/{package}/versions?per_page=100&page={page}",
+    )
+    if status != 200:
+        raise SystemExit(f"No se pudo listar el paquete GHCR ({status}): {body}")
+    batch = json.loads(body)
+    if not batch:
+        break
+    versions.extend(batch)
+    page += 1
+
+deleted = []
+for version in versions:
+    tags = ((version.get("metadata") or {}).get("container") or {}).get("tags") or []
+    numeric = [int(item) for item in tags if str(item).isdigit()]
+    if len(numeric) != len(tags) or not numeric or max(numeric) > cutoff:
+        continue
+    status, body = call(
+        "DELETE",
+        f"https://api.github.com/user/packages/container/{package}/versions/{version['id']}",
+    )
+    if status not in (200, 204):
+        names = ",".join(str(item) for item in numeric)
+        raise SystemExit(f"No se pudo borrar la tag {names} ({status}): {body}")
+    deleted.extend(numeric)
+
+deleted.sort()
+print(
+    f"GHCR {parts[2]}: conservadas las tags >= {cutoff + 1}. "
+    f"Borradas: {', '.join(str(item) for item in deleted) if deleted else 'ninguna'}"
+)
+PY
+                        '''
+                    }
+                }
             }
         }
 
