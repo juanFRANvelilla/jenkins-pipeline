@@ -16,7 +16,7 @@ Prepare  ->  Checkout  ->  Build and Push (BuildKit -> GHCR)
 2. **Checkout**: fetches branch `BRANCH` from `GIT_URL`.
 3. **Build and Push**: builds the app's `Dockerfile` and pushes `ghcr.io/juanfranvelilla/<image>:<BUILD_NUMBER>`.
 4. **Publish Helm Chart**: copies `k8s/` to `charts/app/<repo>/<APP_NAME>/` in [helm-charts](https://github.com/juanFRANvelilla/helm-charts) (`develop`), sets `appVersion` and `image.tag` to `BUILD_NUMBER`, and pushes.
-5. **Deploy PRE** (when `DEPLOY_PRE` is enabled): `helm upgrade --install` of the `k8s/` chart using `values-pre.yaml`, with `image.tag=<BUILD_NUMBER>`. If the rollout doesn't become ready within 5 minutes, Helm rolls back automatically (`--atomic`).
+5. **Deploy PRE** (when `DEPLOY_PRE` is enabled): `helm upgrade --install` with `values-pre.yaml`, or `values.yaml` if PRE file does not exist (single-env apps like Verbaflow). `image.tag=<BUILD_NUMBER>`. `--atomic` rollback after 5 minutes.
 
 ## Job parameters
 
@@ -41,7 +41,7 @@ Everything else is derived from `GIT_URL` and `APP_NAME`:
 | Image          | `ghcr.io/juanfranvelilla/<repo>-<APP_NAME>` | `ghcr.io/juanfranvelilla/<repo>` |
 | Tag            | `<BUILD_NUMBER>`                            | `<BUILD_NUMBER>`                 |
 | Helm release   | `<repo>-<APP_NAME>`                         | `<repo>`                         |
-| Namespace      | `namespace` field in `k8s/values-pre.yaml`  | same                             |
+| Namespace      | `namespace` in `values-pre.yaml` or `values.yaml` | same                             |
 | helm-charts    | `charts/app/<repo>/<APP_NAME>/`             | same                             |
 
 Example, finance-portfolio backend: image `ghcr.io/juanfranvelilla/finance-portfolio-backend:12`, release `finance-portfolio-backend`, namespace `pre-finance-portfolio-back`.

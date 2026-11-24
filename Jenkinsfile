@@ -284,7 +284,7 @@ PY
                             if [ -f "\$DEST/Chart.yaml" ]; then
                               sed -i "s/^appVersion:.*/appVersion: \\"${IMAGE_TAG}\\"/" "\$DEST/Chart.yaml"
                             fi
-                            for values in "\$DEST"/values-pre.yaml "\$DEST"/values-pro.yaml; do
+                            for values in "\$DEST"/values-pre.yaml "\$DEST"/values-pro.yaml "\$DEST"/values.yaml; do
                               if [ -f "\$values" ]; then
                                 sed -i "s/^  tag:.*/  tag: \\"${IMAGE_TAG}\\"/" "\$values"
                               fi
@@ -312,19 +312,27 @@ PY
             steps {
                 container('helm') {
                     script {
+                        def valuesFile = 'values-pre.yaml'
+                        if (!fileExists("${CHART_DIR}/values-pre.yaml")) {
+                            valuesFile = 'values.yaml'
+                        }
+                        if (!fileExists("${CHART_DIR}/${valuesFile}")) {
+                            error "No hay ${CHART_DIR}/values-pre.yaml ni values.yaml"
+                        }
+
                         env.NAMESPACE = sh(
-                            script: "yq '.namespace' ${CHART_DIR}/values-pre.yaml",
+                            script: "yq '.namespace' ${CHART_DIR}/${valuesFile}",
                             returnStdout: true
                         ).trim()
 
                         if (!env.NAMESPACE || env.NAMESPACE == 'null') {
-                            error "El chart ${CHART_DIR} no define 'namespace' en values-pre.yaml"
+                            error "El chart ${CHART_DIR} no define 'namespace' en ${valuesFile}"
                         }
 
                         sh """
                         helm upgrade --install ${RELEASE} ${CHART_DIR} \
                             --namespace ${NAMESPACE} \
-                            -f ${CHART_DIR}/values-pre.yaml \
+                            -f ${CHART_DIR}/${valuesFile} \
                             --set image.tag=${IMAGE_TAG} \
                             --atomic \
                             --wait \
