@@ -103,6 +103,9 @@ kubectl create rolebinding jenkins-deployer -n $NS \
   --clusterrole=edit \
   --serviceaccount=jenkins:jenkins-deployer
 
+# If the chart uses Gateway API / cert-manager (HTTPRoute, Certificate), also apply
+# the app’s jenkins-gateway-rbac.yaml (Verbaflow: k8s/bootstrap/jenkins-gateway-rbac.yaml).
+
 # Credentials for the cluster to pull the image from GHCR
 kubectl create secret docker-registry ghcr-secret -n $NS \
   --docker-server=ghcr.io \
